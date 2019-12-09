@@ -3,7 +3,7 @@ title: 皮蛋啊皮蛋 Blog
 SEOTitle: 皮蛋啊皮蛋的博客 | PD Blog
 header-img: img/post-bg-desk.jpg
 email: wangao630905324@163.com
-description: "皮蛋啊皮蛋"
+description: 皮蛋啊皮蛋
 keyword: "blog"
 url: "http://lovetaitai.github.io"          # your host, for absolute URL
 baseurl: ""      # for example, '/blog' if your blog hosted on 'host/blog'
@@ -11,7 +11,7 @@ github_repo: "https://github.com/lovetaitai/lovetaitai.github.io.git" # you code
 
 # Sidebar settings
 sidebar: true                           # whether or not using Sidebar.
-sidebar-about-description: "you can you bb!"
+sidebar-about-description: "广告招商位(请联系下方邮箱)"
 sidebar-avatar: /img/about-PD-img.jpg      # use absolute URL, seeing it's used in both `/` and `/about/`
 
 
