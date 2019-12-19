@@ -1,0 +1,126 @@
+---
+layout:     post
+title:      lua调用c动态链接库
+subtitle:   lua调用c动态链接库
+date:       2019-12-19
+author:     皮蛋啊皮蛋
+header-img: img/post-bg-re-vs-ng2.jpg
+catalog: true
+tags:
+    - lua
+    - 动态链接库
+    - alien
+    - ffi
+---
+
+## lua调用c动态链接库
+
+### 主要方法
+lua调用so文件主要两种方式：
+  
+ + C文件在提供编译后的so文件时，使用Lua扩展C库封装业务接口，使得接口和参数能够直接被lua识别，不需要额外的引用工具就可以直接调用接口，但是这种方式通过虚拟栈来传递Lua和C之间的调用参数和返回值，开发效率和通用性更低。  
+> 参考链接：[简单的lua扩展C库](https://www.jianshu.com/p/c3c5b7fb9948)
+
++ 引入第三方依赖库直接调用传统的动态链接库，这样的好处在于不需要编写lua专用的so，更加具有通用性，性能也更高。第三方库目前用的比较多的有两种，一个是alien，一个是luajit的FFI。实际使用alien调用so文件时发现调用错误，查阅alien官方文档发现不支持嵌套的结构体类型，而FFI可以实现。
+
+### FFI的使用
+
+  
+&ensp; &ensp;&ensp;&ensp;&ensp;&ensp;luajit是lua的一个Just-In-Time运行时编译器，也可以说是lua的一个高效版，而FFI直接集成在了luajit中所以不需要额外的安装步骤。luajit安装后续补充。
+  
+ &ensp; &ensp;&ensp;&ensp;&ensp;&ensp;FFI的引入和lua引用其他模块一样, ffi.load就是加载指定so文件，文件位置的指定可以直接绝对路径指定。
+
+```
+local ffi = require("ffi")
+local example = ffi.load('./example.so')
+
+```
+ &ensp; &ensp;&ensp;&ensp;&ensp;&ensp;ffi.cdef是定义so文件中对应的需要调用的接口，如果涉及到结构体或者变量的定义，都放在这里，直接复制c的代码即可。
+ 
+```
+ffi.cdef[[
+   typedef struct
+    {
+        char value[20];
+        int num;
+    } struct_a;
+
+    typedef struct struct_b {
+        uint32_t len;
+        struct_a struct;
+        char version[32];
+        char text[0];
+    } struct_b;
+    
+    char *decrypt(const char *text);
+]]
+```
+ &ensp; &ensp;&ensp;&ensp;&ensp;&ensp;接口调用很简单，直接  example. decrypt("abdce12345")  就完成了接口的调用，但是实际出现问题在于lua中的变量类型（string）与c需要的变量类型（const char *）不一致，所以需要在调用前把变量类型转换正确。
+ 
+ &ensp; &ensp;&ensp;&ensp;&ensp;&ensp;ffi.typeof的作用就是生成一个指定c语言类型的变量，在lua中统一显示为cdata类型，然后使用ffi.cast将数值复制到生产的变量中。对于结构体这样的复杂类型无法用cast进行赋值，使用ffi.typeof定义为结构体后使用ffi.new进行转换。ffi.new的作用就是新建一个指定类型的变量。
+ 
+ ```
+local char = ffi.typeof("const char*")
+local res = ffi.cast(char, "12345abcde")
+local data = {128,{"123456abcde",0} ,"",""}
+local struct = ffi.typeof("struct struct_b")
+local structData = ffi.new(struct, data)
+
+ ```
+ 
+&ensp; &ensp;&ensp;&ensp;&ensp;&ensp;把上面涉及的内容连起来就完成了接口的基本调用。其中最需要注意的就是变量类型的对应和转换，比如 char * 类型的接口返回值是一个指针，在lua中并不能直接输出，需要通过ffi.string(pointer,128) 来获取地址所对应的多少长度的数据。
+
+&ensp; &ensp;&ensp;&ensp;&ensp;&ensp;实际调试时碰到最多的问题还是集中在地址的声明和使用上，最后还是把涉及地址的操作在so文件中进行，不在lua调用时创建地址空间。
+
+>更多FFI相关内容参考官方文档：[luajit FFI](http://luajit.org/ext_ffi_api.html)
+
+### alien使用
+
+&ensp; &ensp;&ensp;&ensp;&ensp;&ensp;alien用起来流程跟FFI差不多，但是安装太过麻烦，也可能是用的服务器环境不太稳，服务器系统是centso7.3。
+
+&ensp; &ensp;&ensp;&ensp;&ensp;&ensp;alien官网推荐使用luarocks
+>LuaRocks is the package manager for Lua modules.
+
+```
+wget http://luarocks.org/releases/luarocks-*.tar.gz  
+tar zxpf luarocks-*.tar.gz  
+cd luarocks-* 
+./configure
+make bootstrap 
+```
+&ensp; &ensp;&ensp;&ensp;&ensp;&ensp;按顺序执行即可，没啥大问题，下不下来就手动下，挑好版本。alien还有依赖需要安装，不知道干啥的下就完事了。
+
+```
+yum install -y libffi-devel
+luarocks install alien
+```
+&ensp; &ensp;&ensp;&ensp;&ensp;&ensp;下完了就用luarocks的命令安装alien，期间报错没有markdown命令，看别的博客说是python版本要升到2.7.13以上，然后开始升，一顿操作缺这个缺那个后放弃升级。后来想到办法单独装了个python\_markdown，然后把markdown命令指向python\_markdown后解决问题。
+
+```
+yum install python_markdown
+su -c 'ln -s markdown_py markdown'
+```
+&ensp; &ensp;&ensp;&ensp;&ensp;&ensp;贴一个简单例子
+
+```
+package.path = "/usr/local/share/lua/5.1/?.lua;"..package.path
+package.cpath = "/usr/local/lib/lua/5.1/?.so;"..package.cpath
+
+alien = require "alien"
+
+libc = alien.load("./libmax.so")
+libc.max:types("int","int","int")
+res = libc.max(23,32)
+print(res)
+```
+
+&ensp; &ensp;&ensp;&ensp;&ensp;&ensp;看官方文档不支持嵌套的结构体，而实际需要用到嵌套的结构体所以没有研究，以后还要用到再补充。
+
+
+ 
+
+ 
+
+
+
+
